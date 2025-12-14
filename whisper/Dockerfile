@@ -1,14 +1,13 @@
-FROM public.ecr.aws/lambda/python:3.11
+FROM public.ecr.aws/lambda/python:3.12
 
 # Install build tools and dependencies
-RUN yum install -y \
+RUN dnf install -y \
     gcc \
     gcc-c++ \
-    cmake3 \
+    cmake \
     make \
     git \
-    && yum clean all && \
-    ln -s /usr/bin/cmake3 /usr/bin/cmake
+    && dnf clean all
 
 # Build whisper.cpp from source to ensure compatibility with Lambda environment
 WORKDIR /tmp
@@ -16,10 +15,10 @@ RUN git clone https://github.com/ggml-org/whisper.cpp.git && \
     cd whisper.cpp && \
     cmake -B build && \
     cmake --build build -j --config Release && \
-    mkdir -p ${LAMBDA_TASK_ROOT}/bin && \
-    cp build/bin/whisper-cli ${LAMBDA_TASK_ROOT}/bin/ && \
-    cp build/src/libwhisper.so* ${LAMBDA_TASK_ROOT}/bin/ 2>/dev/null || true && \
-    chmod +x ${LAMBDA_TASK_ROOT}/bin/whisper-cli
+    cp -r build/* ${LAMBDA_TASK_ROOT}/ && \
+    chmod +x ${LAMBDA_TASK_ROOT}/bin/whisper-cli && \
+    cd /tmp && \
+    rm -rf whisper.cpp
 
 # Copy models and Python code
 COPY models/ ${LAMBDA_TASK_ROOT}/models/

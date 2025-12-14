@@ -6,6 +6,7 @@ import boto3
 
 s3 = boto3.client('s3')
 
+
 def lambda_handler(event, context):
     print(json.dumps(event))
     bucket_name = event['Records'][0]['s3']['bucket']['name']
@@ -16,15 +17,16 @@ def lambda_handler(event, context):
     audio_file = "/tmp/audio.wav"
     s3.download_file(bucket_name, object_key, audio_file)
 
-    #check if file exists
+    # check if file exists
     if not os.path.exists(audio_file):
-        raise FileNotFoundError(f"WAV file not found: {audio_file}")   
+        raise FileNotFoundError(f"WAV file not found: {audio_file}")
 
     # Process the audio file
     result = process_audio(audio_file)
 
+    object_name = object_key.split('/')[-1].split('.')[0]
     # Upload the result back to S3
-    result_key = f"processed/{object_key}.json"
+    result_key = f"processed/{object_name}.json"
     s3.put_object(Bucket=bucket_name, Key=result_key, Body=json.dumps(result))
 
     return {
@@ -54,14 +56,18 @@ def process_audio(wav_file, model_name="tiny"):
         raise FileNotFoundError(f"WAV file not found: {wav_file}")
 
     # Get the absolute path to whisper-cli in Lambda environment
-    whisper_cli = os.path.join(os.environ.get('LAMBDA_TASK_ROOT', '.'), 'bin', 'whisper-cli')
-    
-    # Set LD_LIBRARY_PATH to include the bin directory for shared libraries
+    whisper_cli = os.path.join(os.environ.get(
+        'LAMBDA_TASK_ROOT', '.'), 'bin', 'whisper-cli')
+
+    # Set LD_LIBRARY_PATH to include both bin and src directories for shared libraries
     env = os.environ.copy()
-    bin_path = os.path.join(os.environ.get('LAMBDA_TASK_ROOT', '.'), 'bin')
+    lambda_root = os.environ.get('LAMBDA_TASK_ROOT', '.')
+    bin_path = os.path.join(lambda_root, 'bin')
+    src_path = os.path.join(lambda_root, 'src')
+    ggml_src_path = os.path.join(lambda_root, 'ggml/src')
     existing_ld_path = env.get('LD_LIBRARY_PATH', '')
-    env['LD_LIBRARY_PATH'] = f"{bin_path}:{existing_ld_path}" if existing_ld_path else bin_path
-    
+    env['LD_LIBRARY_PATH'] = f"{bin_path}:{src_path}:{ggml_src_path}:{existing_ld_path}" if existing_ld_path else f"{bin_path}:{src_path}:{ggml_src_path}"
+
     # whisper.cpp command format: ./main -m model.bin -f input.wav -nt (no timestamps) -np (no print progress)
     full_command = f"{whisper_cli} -m {model} -f {wav_file} -nt"
 
@@ -75,7 +81,8 @@ def process_audio(wav_file, model_name="tiny"):
     # Check if process failed (non-zero exit code)
     if process.returncode != 0:
         error_msg = error.decode('utf-8') if error else 'Unknown error'
-        raise Exception(f"Error processing audio (exit code {process.returncode}): {error_msg}")
+        raise Exception(
+            f"Error processing audio (exit code {process.returncode}): {error_msg}")
 
     # Process and return the output string
     decoded_str = output.decode('utf-8').strip()
