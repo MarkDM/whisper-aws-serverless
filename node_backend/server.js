@@ -56,7 +56,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     // Generate unique filename with timestamp
     const timestamp = Date.now();
     const originalName = req.file.originalname;
-    const fileName = `${timestamp}-${originalName}`;
+    const fileName = `unprocessed/${timestamp}-${originalName}`;
 
     // Upload to S3
     const upload = new Upload({
@@ -105,13 +105,14 @@ app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
 
     const uploadPromises = req.files.map(async (file) => {
       const timestamp = Date.now();
-      const fileName = `${timestamp}-${file.originalname}`;
+      const fileName = `unprocessed/${timestamp}-${file.originalname}`;
 
       const upload = new Upload({
         client: s3Client,
         params: {
           Bucket: bucketName,
           Key: fileName,
+
           Body: file.buffer,
           ContentType: file.mimetype,
         },
