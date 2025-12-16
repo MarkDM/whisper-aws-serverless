@@ -40,7 +40,11 @@ async function reveiveSqSMessages() {
   };
   try {
     const data = await sqsClient.send(new ReceiveMessageCommand(params));
+
     if (data.Messages) {
+
+      // console.log('Data received:', data);
+
       for (const message of data.Messages) {
         console.log('Received message:', message.Body);
         // Process the message here

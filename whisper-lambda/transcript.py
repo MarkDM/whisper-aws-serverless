@@ -5,6 +5,7 @@ import json
 import boto3
 
 s3 = boto3.client('s3')
+sqs = boto3.client('sqs')
 
 
 def lambda_handler(event, context):
@@ -27,7 +28,24 @@ def lambda_handler(event, context):
     object_name = object_key.split('/')[-1].split('.')[0]
     # Upload the result back to S3
     result_key = f"processed/{object_name}.json"
-    s3.put_object(Bucket=bucket_name, Key=result_key, Body=json.dumps(result))
+    result = json.dumps({'filename': object_name, 'transcript': result})
+    s3.put_object(Bucket=bucket_name, Key=result_key, Body=result)
+    
+    try:
+        response = sqs.send_message(
+            QueueUrl=os.environ['SQS_QUEUE_URL'],
+            MessageBody=result,
+            MessageAttributes={
+                'filename': {
+                    'StringValue': object_name,
+                    'DataType': 'String'
+                }
+            }
+        )
+        print(f"Message sent to SQS with MessageId: {response['MessageId']}")
+    except Exception as e:
+        print(f"Failed to send message to SQS: {str(e)}")
+        raise
 
     return {
         'statusCode': 200,
