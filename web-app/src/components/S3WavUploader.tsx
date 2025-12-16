@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload as UploadIcon } from 'lucide-react'
+import { Upload as UploadIcon, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface UploadStatus {
   fileName: string
-  status: 'pending' | 'uploading' | 'success' | 'error'
+  status: 'pending' | 'uploading' | 'success' | 'processing' | 'completed' | 'error'
   progress: number
   error?: string
+  transcript?: string
+  isExpanded?: boolean
 }
 
 function S3WavUploader() {
@@ -19,10 +21,44 @@ function S3WavUploader() {
     const eventSource = new EventSource(`${API_URL}/events`)
 
     eventSource.onmessage = (ev) => {
-      const json = JSON.parse(ev.data);
+      const data = JSON.parse(ev.data);
+      console.log('SSE message received:', data)
 
-      console.log(json)
-      // Here you can handle incoming messages if needed
+      // Parse the message body if it's a string
+      let messageData = data;
+      if (typeof data === 'string') {
+        try {
+          messageData = JSON.parse(data);
+        } catch (e) {
+          console.error('Failed to parse message data:', e);
+          return;
+        }
+      }
+
+      const { filename, status, transcript } = messageData;
+
+      if (status === 'Transcription started') {
+        // Update status to processing when transcription starts
+        setUploadStatuses(prev =>
+          prev.map(item => {
+            const itemName = item.fileName.split('.')[0];
+            const msgName = filename.split('/').pop().split('.')[0];
+            return itemName === msgName || item.fileName === filename
+              ? { ...item, status: 'processing' }
+              : item;
+          })
+        );
+      } else if (status === 'Transcription completed' && transcript) {
+        // Update status to completed and add transcript
+        setUploadStatuses(prev =>
+          prev.map(item => {
+            const itemName = item.fileName.split('.')[0];
+            return itemName === filename || item.fileName === filename
+              ? { ...item, status: 'completed', transcript, isExpanded: false }
+              : item;
+          })
+        );
+      }
     }
 
     eventSource.onerror = (error) => {
@@ -159,9 +195,19 @@ function S3WavUploader() {
 
   const clearCompleted = () => {
     setUploadStatuses(prev =>
-      prev.filter(status => status.status === 'uploading' || status.status === 'pending')
+      prev.filter(status => status.status === 'uploading' || status.status === 'pending' || status.status === 'processing')
     )
   }
+
+  const toggleExpand = (fileName: string) => {
+    setUploadStatuses(prev =>
+      prev.map(item =>
+        item.fileName === fileName
+          ? { ...item, isExpanded: !item.isExpanded }
+          : item
+      )
+    );
+  };
 
   const getStatusStyles = (status: UploadStatus['status']) => {
     switch (status) {
@@ -170,6 +216,10 @@ function S3WavUploader() {
       case 'uploading':
         return 'bg-primary/10 text-primary'
       case 'success':
+        return 'bg-green-500/10 text-green-600 dark:text-green-400'
+      case 'processing':
+        return 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+      case 'completed':
         return 'bg-green-500/10 text-green-600 dark:text-green-400'
       case 'error':
         return 'bg-destructive/10 text-destructive'
@@ -265,6 +315,36 @@ function S3WavUploader() {
 
               {upload.status === 'success' && (
                 <p className="text-green-600 dark:text-green-400 text-sm mt-2">✓ Upload complete</p>
+              )}
+
+              {upload.status === 'processing' && (
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <p className="text-blue-600 dark:text-blue-400 text-sm">Processing transcription...</p>
+                </div>
+              )}
+
+              {upload.status === 'completed' && upload.transcript && (
+                <div className="mt-3 border border-border rounded-md overflow-hidden">
+                  <button
+                    onClick={() => toggleExpand(upload.fileName)}
+                    className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <span className="text-sm font-medium text-foreground">Transcription</span>
+                    {upload.isExpanded ? (
+                      <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    )}
+                  </button>
+                  {upload.isExpanded && (
+                    <div className="p-4 bg-card">
+                      <p className="text-sm text-card-foreground whitespace-pre-wrap leading-relaxed">
+                        {upload.transcript}
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           ))}

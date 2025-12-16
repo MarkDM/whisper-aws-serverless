@@ -10,7 +10,7 @@ sqs = boto3.client('sqs')
 queue_url = os.environ.get('SQS_QUEUE_URL')
 
 
-def send_message_to_sqs(queue_url, message_body, message_attributes):
+def send_message_to_sqs(queue_url, message_body, message_attributes={}):
     try:
         response = sqs.send_message(
             QueueUrl=queue_url,
@@ -27,10 +27,18 @@ def lambda_handler(event, context):
     # print(json.dumps(event))
     bucket_name = event['Records'][0]['s3']['bucket']['name']
     object_key = event['Records'][0]['s3']['object']['key']
+    object_name = object_key.split('/')[-1]
 
     send_message_to_sqs(
         queue_url=queue_url,
-        message_body={'filename': object_key, "status": "Transcription started"},
+        message_body=json.dumps({'filename': object_name,
+                                 "status": "Transcription started"}),
+        message_attributes={
+            'filename': {
+                'StringValue': object_name,
+                'DataType': 'String'
+            }
+        }
     )
     print(f"Processing file {object_key} from bucket {bucket_name}")
 
@@ -45,10 +53,10 @@ def lambda_handler(event, context):
     # Process the audio file
     result = process_audio(audio_file)
 
-    object_name = object_key.split('/')[-1].split('.')[0]
     # Upload the result back to S3
     result_key = f"processed/{object_name}.json"
-    result = json.dumps({'filename': object_name, 'transcript': result,"status": "Transcription completed"})
+    result = json.dumps(
+        {'filename': object_name, 'transcript': result, "status": "Transcription completed"})
     s3.put_object(Bucket=bucket_name, Key=result_key, Body=result)
 
     send_message_to_sqs(
