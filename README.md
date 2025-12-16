@@ -2,9 +2,7 @@
 
 A full-stack serverless audio transcription system using OpenAI's Whisper model, deployed on AWS infrastructure. Upload WAV files and get real-time transcription updates through a modern web interface.
 
-[![Watch the video](https://img.youtube.com/vi/OVGLdkj3WqA/0.jpg)](https://youtu.be/OVGLdkj3WqA)
-
-
+https://github.com/user-attachments/assets/80502cf1-43b7-4492-af4e-c1fefe8744a0
 
 **Workflow:**
 1. User uploads WAV file through React web app
