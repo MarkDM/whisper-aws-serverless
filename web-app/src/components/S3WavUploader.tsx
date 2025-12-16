@@ -8,6 +8,7 @@ interface UploadStatus {
   error?: string
   transcript?: string
   isExpanded?: boolean
+  audioUrl?: string
 }
 
 function S3WavUploader() {
@@ -87,6 +88,7 @@ function S3WavUploader() {
       fileName: file.name,
       status: 'pending',
       progress: 0,
+      audioUrl: URL.createObjectURL(file),
     }))
 
     setUploadStatuses(prev => [...prev, ...newStatuses])
@@ -194,9 +196,15 @@ function S3WavUploader() {
   }
 
   const clearCompleted = () => {
-    setUploadStatuses(prev =>
-      prev.filter(status => status.status === 'uploading' || status.status === 'pending' || status.status === 'processing')
-    )
+    setUploadStatuses(prev => {
+      // Revoke object URLs for items being removed
+      prev.forEach(status => {
+        if (status.status !== 'uploading' && status.status !== 'pending' && status.status !== 'processing' && status.audioUrl) {
+          URL.revokeObjectURL(status.audioUrl)
+        }
+      })
+      return prev.filter(status => status.status === 'uploading' || status.status === 'pending' || status.status === 'processing')
+    })
   }
 
   const toggleExpand = (fileName: string) => {
@@ -314,7 +322,15 @@ function S3WavUploader() {
               )}
 
               {upload.status === 'success' && (
-                <p className="text-green-600 dark:text-green-400 text-sm mt-2">✓ Upload complete</p>
+                <div className="mt-2">
+                  <p className="text-green-600 dark:text-green-400 text-sm mb-2">✓ Upload complete</p>
+                  {upload.audioUrl && (
+                    <audio controls className="w-full mt-2" preload="metadata">
+                      <source src={upload.audioUrl} type="audio/wav" />
+                      Your browser does not support the audio element.
+                    </audio>
+                  )}
+                </div>
               )}
 
               {upload.status === 'processing' && (
@@ -325,25 +341,33 @@ function S3WavUploader() {
               )}
 
               {upload.status === 'completed' && upload.transcript && (
-                <div className="mt-3 border border-border rounded-md overflow-hidden">
-                  <button
-                    onClick={() => toggleExpand(upload.fileName)}
-                    className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50 transition-colors"
-                  >
-                    <span className="text-sm font-medium text-foreground">Transcription</span>
-                    {upload.isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                    )}
-                  </button>
-                  {upload.isExpanded && (
-                    <div className="p-4 bg-card">
-                      <p className="text-sm text-card-foreground whitespace-pre-wrap leading-relaxed">
-                        {upload.transcript}
-                      </p>
-                    </div>
+                <div className="mt-3">
+                  {upload.audioUrl && (
+                    <audio controls className="w-full mb-3" preload="metadata">
+                      <source src={upload.audioUrl} type="audio/wav" />
+                      Your browser does not support the audio element.
+                    </audio>
                   )}
+                  <div className="border border-border rounded-md overflow-hidden">
+                    <button
+                      onClick={() => toggleExpand(upload.fileName)}
+                      className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="text-sm font-medium text-foreground">Transcription</span>
+                      {upload.isExpanded ? (
+                        <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </button>
+                    {upload.isExpanded && (
+                      <div className="p-4 bg-card">
+                        <p className="text-sm text-card-foreground whitespace-pre-wrap leading-relaxed">
+                          {upload.transcript}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
