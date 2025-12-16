@@ -4,14 +4,15 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { Readable } from 'stream';
+import { SQSClient } from '@aws-sdk/client-sqs';
+import { ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
+
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configure AWS S3
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
   credentials: {
@@ -20,7 +21,42 @@ const s3Client = new S3Client({
   },
 });
 
-// Configure CORS
+const queueUrl = process.env.SQS_QUEUE_URL;
+
+const sqsClient = new SQSClient({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+
+
+async function reveiveSqSMessages() {
+  const params = {
+    QueueUrl: queueUrl,
+    MaxNumberOfMessages: 10,
+    WaitTimeSeconds: 20,
+  };
+  try {
+    const data = await sqsClient.send(new ReceiveMessageCommand(params));
+    if (data.Messages) {
+      for (const message of data.Messages) {
+        console.log('Received message:', message.Body);
+        // Process the message here
+        // After processing, delete the message from the queue
+        const deleteParams = {
+          QueueUrl: queueUrl,
+          ReceiptHandle: message.ReceiptHandle,
+        };
+        await sqsClient.send(new DeleteMessageCommand(deleteParams));
+      }
+    }
+  } catch (error) {
+    console.error('Error receiving messages:', error);
+  }
+}
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true,
@@ -28,20 +64,13 @@ app.use(cors({
 
 app.use(express.json());
 
-// Configure multer for memory storage
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit
+    fileSize: 100 * 1024 * 1024 //Max file size: 100MB,
   },
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
-});
-
-// Upload endpoint
 app.post('/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -53,12 +82,10 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(500).json({ error: 'S3 bucket name not configured' });
     }
 
-    // Generate unique filename with timestamp
     const timestamp = Date.now();
     const originalName = req.file.originalname;
     const fileName = `unprocessed/${timestamp}-${originalName}`;
 
-    // Upload to S3
     const upload = new Upload({
       client: s3Client,
       params: {
@@ -91,7 +118,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Multiple files upload endpoint
 app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -140,6 +166,20 @@ app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
     });
   }
 });
+
+async function poll() {
+  console.log("Starting SQS polling...");
+  while (true) {
+    try {
+      await reveiveSqSMessages();
+    } catch (err) {
+      console.error("Error receiving messages:", err);
+    }
+  }
+}
+
+// Start polling without blocking
+setImmediate(() => poll());
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

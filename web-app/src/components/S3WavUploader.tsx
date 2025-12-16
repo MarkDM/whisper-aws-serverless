@@ -159,7 +159,7 @@ function S3WavUploader() {
   return (
     <div className="max-w-3xl mx-auto p-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-foreground">
-        Upload .WAV Files to S3
+        Whisper audio transcription
       </h1>
       
       <div
@@ -214,7 +214,7 @@ function S3WavUploader() {
               className="border border-border rounded-lg p-4 mb-3 bg-card shadow-sm"
             >
               <div className="flex justify-between items-center mb-2">
-                <span className="font-medium text-card-foreground break-words flex-1">
+                <span className="font-medium text-card-foreground wrap-break-word flex-1">
                   {upload.fileName}
                 </span>
                 <span 
