@@ -7,11 +7,31 @@ import boto3
 s3 = boto3.client('s3')
 sqs = boto3.client('sqs')
 
+queue_url = os.environ.get('SQS_QUEUE_URL')
+
+
+def send_message_to_sqs(queue_url, message_body, message_attributes):
+    try:
+        response = sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=message_body,
+            MessageAttributes=message_attributes
+        )
+        print(f"Message sent to SQS with MessageId: {response['MessageId']}")
+    except Exception as e:
+        print(f"Failed to send message to SQS: {str(e)}")
+        raise
+
 
 def lambda_handler(event, context):
-    print(json.dumps(event))
+    # print(json.dumps(event))
     bucket_name = event['Records'][0]['s3']['bucket']['name']
     object_key = event['Records'][0]['s3']['object']['key']
+
+    send_message_to_sqs(
+        queue_url=queue_url,
+        message_body={'filename': object_key, "status": "Transcription started"},
+    )
     print(f"Processing file {object_key} from bucket {bucket_name}")
 
     # Download the audio file from S3
@@ -28,24 +48,19 @@ def lambda_handler(event, context):
     object_name = object_key.split('/')[-1].split('.')[0]
     # Upload the result back to S3
     result_key = f"processed/{object_name}.json"
-    result = json.dumps({'filename': object_name, 'transcript': result})
+    result = json.dumps({'filename': object_name, 'transcript': result,"status": "Transcription completed"})
     s3.put_object(Bucket=bucket_name, Key=result_key, Body=result)
-    
-    try:
-        response = sqs.send_message(
-            QueueUrl=os.environ['SQS_QUEUE_URL'],
-            MessageBody=result,
-            MessageAttributes={
-                'filename': {
-                    'StringValue': object_name,
-                    'DataType': 'String'
-                }
+
+    send_message_to_sqs(
+        queue_url=queue_url,
+        message_body=result,
+        message_attributes={
+            'filename': {
+                'StringValue': object_name,
+                'DataType': 'String'
             }
-        )
-        print(f"Message sent to SQS with MessageId: {response['MessageId']}")
-    except Exception as e:
-        print(f"Failed to send message to SQS: {str(e)}")
-        raise
+        }
+    )
 
     return {
         'statusCode': 200,

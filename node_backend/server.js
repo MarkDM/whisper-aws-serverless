@@ -13,6 +13,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+}));
+
+app.use(express.json());
+
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
   credentials: {
@@ -31,6 +38,8 @@ const sqsClient = new SQSClient({
   },
 });
 
+let clients = [];
+
 
 async function reveiveSqSMessages() {
   const params = {
@@ -47,6 +56,9 @@ async function reveiveSqSMessages() {
 
       for (const message of data.Messages) {
         console.log('Received message:', message.Body);
+
+        sendSSEEvent(message.Body);
+
         // Process the message here
         // After processing, delete the message from the queue
         const deleteParams = {
@@ -61,18 +73,45 @@ async function reveiveSqSMessages() {
   }
 }
 
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  credentials: true,
-}));
 
-app.use(express.json());
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 100 * 1024 * 1024 //Max file size: 100MB,
   },
+});
+
+
+function sendSSEEvent(data) {
+  clients.forEach(client => {
+    client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+  });
+}
+
+
+app.get('/events', (req, res) => {
+  // Set headers for SSE
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  res.flushHeaders();
+
+
+  const clientId = Date.now();
+  const newClient = { id: clientId, res };
+  clients.push(newClient);
+
+  console.log(`Client connected: ${clientId}. Total clients: ${clients.length}`);
+
+  // Send an initial event to confirm connection
+  res.write(`event: connected\ndata: Connected\n\n`);
+
+  req.on("close", () => {
+    clients = clients.filter(client => client.id !== clientId);
+  });
+
 });
 
 app.post('/upload', upload.single('file'), async (req, res) => {
@@ -86,9 +125,9 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(500).json({ error: 'S3 bucket name not configured' });
     }
 
-    const timestamp = Date.now();
+    //const timestamp = Date.now();
     const originalName = req.file.originalname;
-    const fileName = `unprocessed/${timestamp}-${originalName}`;
+    const fileName = `unprocessed/${originalName}`;
 
     const upload = new Upload({
       client: s3Client,
@@ -117,55 +156,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     console.error('Upload error:', error);
     res.status(500).json({
       error: 'Failed to upload file',
-      details: error.message,
-    });
-  }
-});
-
-app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
-  try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: 'No files provided' });
-    }
-
-    const bucketName = process.env.S3_BUCKET_NAME;
-    if (!bucketName) {
-      return res.status(500).json({ error: 'S3 bucket name not configured' });
-    }
-
-    const uploadPromises = req.files.map(async (file) => {
-      const timestamp = Date.now();
-      const fileName = `unprocessed/${timestamp}-${file.originalname}`;
-
-      const upload = new Upload({
-        client: s3Client,
-        params: {
-          Bucket: bucketName,
-          Key: fileName,
-
-          Body: file.buffer,
-          ContentType: file.mimetype,
-        },
-      });
-
-      const result = await upload.done();
-      return {
-        fileName: fileName,
-        location: result.Location,
-        key: fileName,
-      };
-    });
-
-    const results = await Promise.all(uploadPromises);
-
-    res.json({
-      message: 'Files uploaded successfully',
-      files: results,
-    });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({
-      error: 'Failed to upload files',
       details: error.message,
     });
   }

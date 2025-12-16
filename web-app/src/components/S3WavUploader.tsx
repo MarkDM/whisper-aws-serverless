@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Upload as UploadIcon } from 'lucide-react'
 
 interface UploadStatus {
@@ -15,10 +15,30 @@ function S3WavUploader() {
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
+  useEffect(() => {
+    const eventSource = new EventSource(`${API_URL}/events`)
+
+    eventSource.onmessage = (ev) => {
+      const json = JSON.parse(ev.data);
+
+      console.log(json)
+      // Here you can handle incoming messages if needed
+    }
+
+    eventSource.onerror = (error) => {
+      console.error('EventSource error:', error)
+      eventSource.close()
+    }
+    return () => {
+      eventSource.close()
+    }
+  }, [])
+
+
   const handleFileSelect = (files: FileList | null) => {
     if (!files) return
 
-    const wavFiles = Array.from(files).filter(file => 
+    const wavFiles = Array.from(files).filter(file =>
       file.name.toLowerCase().endsWith('.wav')
     )
 
@@ -79,11 +99,11 @@ function S3WavUploader() {
           setUploadStatuses(prev =>
             prev.map(status =>
               status.fileName === file.name
-                ? { 
-                    ...status, 
-                    status: 'error', 
-                    error: errorData.error || 'Upload failed' 
-                  }
+                ? {
+                  ...status,
+                  status: 'error',
+                  error: errorData.error || 'Upload failed'
+                }
                 : status
             )
           )
@@ -94,11 +114,11 @@ function S3WavUploader() {
         setUploadStatuses(prev =>
           prev.map(status =>
             status.fileName === file.name
-              ? { 
-                  ...status, 
-                  status: 'error', 
-                  error: 'Network error occurred' 
-                }
+              ? {
+                ...status,
+                status: 'error',
+                error: 'Network error occurred'
+              }
               : status
           )
         )
@@ -110,11 +130,11 @@ function S3WavUploader() {
       setUploadStatuses(prev =>
         prev.map(status =>
           status.fileName === file.name
-            ? { 
-                ...status, 
-                status: 'error', 
-                error: error instanceof Error ? error.message : 'Upload failed' 
-              }
+            ? {
+              ...status,
+              status: 'error',
+              error: error instanceof Error ? error.message : 'Upload failed'
+            }
             : status
         )
       )
@@ -138,7 +158,7 @@ function S3WavUploader() {
   }
 
   const clearCompleted = () => {
-    setUploadStatuses(prev => 
+    setUploadStatuses(prev =>
       prev.filter(status => status.status === 'uploading' || status.status === 'pending')
     )
   }
@@ -161,13 +181,13 @@ function S3WavUploader() {
       <h1 className="text-4xl font-bold text-center mb-8 text-foreground">
         Whisper audio transcription
       </h1>
-      
+
       <div
         className={`
           border-2 border-dashed rounded-lg p-12 text-center cursor-pointer
           transition-all duration-300 ease-in-out
-          ${isDragging 
-            ? 'border-primary bg-primary/5 scale-105' 
+          ${isDragging
+            ? 'border-primary bg-primary/5 scale-105'
             : 'border-border bg-muted/50 hover:border-primary hover:bg-primary/5'
           }
         `}
@@ -199,7 +219,7 @@ function S3WavUploader() {
         <div className="mt-8">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-semibold text-foreground">Upload Status</h2>
-            <button 
+            <button
               onClick={clearCompleted}
               className="px-4 py-2 border border-border rounded-md bg-card text-muted-foreground 
                        hover:bg-accent hover:text-accent-foreground transition-colors text-sm font-medium"
@@ -207,17 +227,17 @@ function S3WavUploader() {
               Clear Completed
             </button>
           </div>
-          
+
           {uploadStatuses.map((upload, index) => (
-            <div 
-              key={`${upload.fileName}-${index}`} 
+            <div
+              key={`${upload.fileName}-${index}`}
               className="border border-border rounded-lg p-4 mb-3 bg-card shadow-sm"
             >
               <div className="flex justify-between items-center mb-2">
                 <span className="font-medium text-card-foreground wrap-break-word flex-1">
                   {upload.fileName}
                 </span>
-                <span 
+                <span
                   className={`
                     px-3 py-1 rounded-full text-xs font-semibold uppercase ml-4
                     ${getStatusStyles(upload.status)}
@@ -226,10 +246,10 @@ function S3WavUploader() {
                   {upload.status}
                 </span>
               </div>
-              
+
               {upload.status === 'uploading' && (
                 <div className="relative w-full h-6 bg-muted rounded-full overflow-hidden mt-2">
-                  <div 
+                  <div
                     className="h-full gradient rounded-full transition-all duration-300"
                     style={{ width: `${upload.progress}%` }}
                   />
@@ -238,11 +258,11 @@ function S3WavUploader() {
                   </span>
                 </div>
               )}
-              
+
               {upload.status === 'error' && (
                 <p className="text-destructive text-sm mt-2">{upload.error}</p>
               )}
-              
+
               {upload.status === 'success' && (
                 <p className="text-green-600 dark:text-green-400 text-sm mt-2">✓ Upload complete</p>
               )}
