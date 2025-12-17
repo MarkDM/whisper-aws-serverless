@@ -39,6 +39,7 @@ const sqsClient = new SQSClient({
 });
 
 let clients = [];
+let isPolling = true;
 
 
 async function reveiveSqSMessages() {
@@ -163,19 +164,48 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
 async function poll() {
   console.log("Starting SQS polling...");
-  while (true) {
+  while (isPolling) {
     try {
       await reveiveSqSMessages();
     } catch (err) {
       console.error("Error receiving messages:", err);
     }
   }
+  console.log("SQS polling stopped.");
 }
 
 // Start polling without blocking
 setImmediate(() => poll());
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`CORS enabled for: ${process.env.CORS_ORIGIN || 'http://localhost:5173'}`);
 });
+
+// Graceful shutdown
+function gracefulShutdown(signal) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  isPolling = false;
+  
+  // Close all SSE connections
+  console.log(`Closing ${clients.length} SSE client(s)...`);
+  clients.forEach(client => {
+    client.res.write('event: shutdown\ndata: Server shutting down\n\n');
+    client.res.end();
+  });
+  clients = [];
+  
+  server.close(() => {
+    console.log('HTTP server closed.');
+    process.exit(0);
+  });
+
+  // Force shutdown after 30 seconds
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout.');
+    process.exit(1);
+  }, 30000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
